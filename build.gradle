@@ -5,7 +5,7 @@ buildscript {
     ext.room_version = "2.2.2"
     ext.glide_version = "4.8.0"
     ext.nav_version = "2.3.5"
-    ext.daggerVersion = '2.14.1'
+    ext.daggerVersion = '2.19'
     repositories {
         google()
         jcenter()

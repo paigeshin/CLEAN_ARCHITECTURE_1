@@ -503,7 +503,7 @@ class NoteFragment : Fragment() {
 }
 ```
 
-# Room
+# v.3.0 Room
 
 ### What is room?
 
@@ -632,7 +632,7 @@ data class Usecases(
 )
 ```
 
-# ViewModel
+# v.4.0 ViewModel
 
 ### MVVM
 
@@ -945,6 +945,124 @@ class NoteViewModel(application: Application): AndroidViewModel(application) {
 
     val saved = MutableLiveData<Boolean>()
     val currentNote = MutableLiveData<Note?>()
+
+    fun saveNote(note: Note) {
+        coroutineScope.launch {
+            useCases.addNote(note)
+            saved.postValue(true)
+        }
+    }
+
+    fun getNote(id: Long) {
+        coroutineScope.launch {
+            val note = useCases.getNote(id)
+            currentNote.postValue(note)
+        }
+    }
+
+    fun deleteNote(note: Note) {
+        coroutineScope.launch {
+            useCases.removeNote(note)
+            saved.postValue(true)
+        }
+    }
+
+}
+```
+
+# v.6.0, Dependency Injection
+
+### Define modules
+
+```kotlin
+@Module
+class ApplicationModule(val app: Application) {
+    @Provides
+    fun provideApp() = app
+
+}
+
+@Module
+class RepositoryModule {
+
+    @Provides
+    fun provideRepository(app: Application) = NoteRepository(RoomNoteDataSource(app))
+
+}
+
+@Module
+class UseCasesModule {
+
+    @Provides
+    fun getUsecases(repository: NoteRepository) = Usecases(
+        AddNote(repository),
+        GetAllNotes(repository),
+        GetNote(repository),
+        RemoveNote(repository)
+    )
+
+}
+```
+
+### Define component
+
+```kotlin
+@Component(modules = [ApplicationModule::class, RepositoryModule::class, UseCasesModule::class])
+interface ViewModelComponent {
+    fun inject(noteViewModel: NoteViewModel)
+    fun inject(listViewModel: ListViewModel)
+}
+```
+
+### Inject
+
+```kotlin
+class ListViewModel(application: Application): AndroidViewModel(application) {
+
+    private val coroutineScope = CoroutineScope(Dispatchers.IO)
+
+    val repository = NoteRepository(RoomNoteDataSource(application))
+
+    @Inject
+    lateinit var useCases: Usecases
+
+    init {
+        DaggerViewModelComponent.builder()
+            .applicationModule(ApplicationModule(application))
+            .build()
+            .inject(this)
+    }
+
+    val notes = MutableLiveData<List<Note>>()
+
+    fun getNotes() {
+        coroutineScope.launch {
+            val noteList = useCases.getAllNotes()
+            notes.postValue(noteList)
+        }
+    }
+
+}
+```
+
+```kotlin
+class NoteViewModel(application: Application): AndroidViewModel(application) {
+
+    private val coroutineScope = CoroutineScope(Dispatchers.IO)
+
+    val repository = NoteRepository(RoomNoteDataSource(application))
+
+    @Inject lateinit var useCases: Usecases
+
+    val saved = MutableLiveData<Boolean>()
+    val currentNote = MutableLiveData<Note?>()
+
+    init {
+        DaggerViewModelComponent.builder()
+            .applicationModule(ApplicationModule((getApplication())))
+            .build()
+            .inject(this)
+    }
 
     fun saveNote(note: Note) {
         coroutineScope.launch {
