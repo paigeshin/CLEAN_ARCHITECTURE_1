@@ -16,6 +16,8 @@
 
 [v.6.0. Dependency Injection](https://www.notion.so/v-6-0-Dependency-Injection-af9f8751ff194a2596cc51c33e6a9d7d)
 
+[v.7.0 New feature example ](https://www.notion.so/v-7-0-New-feature-example-c702a0ca41844367af72154a0760a740)
+
 ### Theory
 
 - Introduce the concepts of clean architecture
