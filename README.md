@@ -555,13 +555,13 @@ data class NoteEntity (
     }
 
     fun toNote(): Note = Note(title, content, creationTime, updateTime, id)
-    
+
 }
 ```
 
 - Responsibility
-    - Note ⇒ NoteEntity
-    - NoteEntity ⇒ Note
+  - Note ⇒ NoteEntity
+  - NoteEntity ⇒ Note
 
 ### Note Dao
 
@@ -580,7 +580,7 @@ interface NoteDao {
 
     @Delete
     suspend fun deleteNoteEntity(noteEntity: NoteEntity)
-    
+
 }
 ```
 
@@ -630,4 +630,342 @@ data class Usecases(
     val getNote: GetNote,
     val removeNote: RemoveNote
 )
+```
+
+# ViewModel
+
+### MVVM
+
+![image](./mvvm.png)
+
+### ViewModel
+
+- A class that stores UI released data
+- A Bridget between the model and the View
+- Has a (very simplified) lifecycle
+- Should not depend on the activity context
+  - Can depend on the application context if necessary
+
+### LiveData
+
+- An observable
+- Lifecycle aware
+- No memory leaks
+- Always up to date data
+- Manages configuration changes
+
+### Define ViewModel
+
+```kotlin
+class NoteViewModel(application: Application): AndroidViewModel(application) {
+
+    private val coroutineScope = CoroutineScope(Dispatchers.IO)
+
+    val repository = NoteRepository(RoomNoteDataSource(application))
+
+    val useCases = Usecases(
+        AddNote(repository),
+        GetAllNotes(repository),
+        GetNote(repository),
+        RemoveNote(repository),
+    )
+
+    val saved = MutableLiveData<Boolean>()
+
+    fun saveNote(note: Note) {
+        coroutineScope.launch {
+            useCases.addNote(note)
+            saved.postValue(true)
+        }
+    }
+
+}
+```
+
+### ListFragment
+
+- ListFragment.kt
+
+```kotlin
+class ListFragment : Fragment(), ListAction {
+
+    private val notesListAdapter = NotesListAdapter(arrayListOf(), this)
+    private lateinit var viewModel: ListViewModel
+
+    override fun onCreateView(
+        inflater: LayoutInflater, container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View? {
+        return inflater.inflate(R.layout.fragment_list, container, false)
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+
+        notesListView.apply {
+            layoutManager = LinearLayoutManager(context)
+            adapter = notesListAdapter
+        }
+
+        addNote.setOnClickListener { goToNoteDetails() }
+
+        viewModel = ViewModelProviders.of(this).get(ListViewModel::class.java)
+
+        observeViewModel()
+    }
+
+    private fun observeViewModel() {
+        viewModel.notes.observe(viewLifecycleOwner, Observer {
+            loadingView.visibility = View.GONE
+            notesListView.visibility = View.VISIBLE
+            notesListAdapter.updateNotes(it.sortedByDescending { it.updateTime })
+        })
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.getNotes()
+    }
+
+    // setup navigation with our defined argument
+    private fun goToNoteDetails(id: Long = 0L) {
+        val action = ListFragmentDirections.actionGoToNote(id)
+        Navigation.findNavController(notesListView).navigate(action)
+    }
+
+    override fun onClick(id: Long) {
+        goToNoteDetails(id)
+    }
+
+}
+```
+
+- ListViewModel.kt
+
+```kotlin
+class ListViewModel(application: Application): AndroidViewModel(application) {
+
+    private val coroutineScope = CoroutineScope(Dispatchers.IO)
+
+    val repository = NoteRepository(RoomNoteDataSource(application))
+
+    val useCases = Usecases(
+        AddNote(repository),
+        GetAllNotes(repository),
+        GetNote(repository),
+        RemoveNote(repository),
+    )
+
+    val notes = MutableLiveData<List<Note>>()
+
+    fun getNotes() {
+        coroutineScope.launch {
+            val noteList = useCases.getAllNotes()
+            notes.postValue(noteList)
+        }
+    }
+
+}
+```
+
+- ListAction.kt
+
+```kotlin
+interface ListAction {
+    fun onClick(id: Long)
+}
+```
+
+### NoteFragment
+
+- NoteFragment.kt
+
+```kotlin
+class NoteFragment : Fragment() {
+
+    private var noteId = 0L
+    private lateinit var viewModel: NoteViewModel
+    private var currentNote = Note("", "", 0L, 0L)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setHasOptionsMenu(true)
+    }
+
+    override fun onCreateView(
+        inflater: LayoutInflater, container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View? {
+        // Inflate the layout for this fragment
+        return inflater.inflate(R.layout.fragment_note, container, false)
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+
+        viewModel = ViewModelProviders.of(this).get(NoteViewModel::class.java)
+
+        arguments?.let {
+            noteId = NoteFragmentArgs.fromBundle(it).noteId
+        }
+
+        if(noteId != 0L) {
+            viewModel.getNote(noteId)
+        }
+
+        checkButton.setOnClickListener {
+            if(titleView.text.isNotEmpty() || contentView.text.isNotEmpty()) {
+                val time = System.currentTimeMillis()
+                currentNote.title = titleView.text.toString()
+                currentNote.content = contentView.text.toString()
+                currentNote.updateTime = time
+                if(currentNote.id == 0L) {
+                    currentNote.creationTime = time
+                }
+                viewModel.saveNote(currentNote)
+            }
+            Navigation.findNavController(it).popBackStack()
+
+        }
+
+        observeViewModel()
+
+    }
+
+    private fun observeViewModel() {
+        viewModel.saved.observe(viewLifecycleOwner, Observer {
+            if(it) {
+                Toast.makeText(context, "Done!", Toast.LENGTH_SHORT).show()
+                hideKeyboard()
+                Navigation.findNavController(titleView).popBackStack()
+            } else {
+                Toast.makeText(context, "Something went wrong, please try again", Toast.LENGTH_SHORT).show()
+            }
+        })
+        viewModel.currentNote.observe(viewLifecycleOwner, Observer {
+            it?.let {
+                currentNote = it
+                titleView.setText(it.title, TextView.BufferType.EDITABLE)
+                contentView.setText(it.content, TextView.BufferType.EDITABLE)
+            }
+        })
+    }
+
+    private fun hideKeyboard() {
+        val imm = context?.getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(titleView.windowToken, 0)
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
+        inflater.inflate(R.menu.note_menu, menu)
+        super.onCreateOptionsMenu(menu, inflater)
+
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        when(item.itemId) {
+            R.id.deleteNote -> {
+                if(context != null && noteId != 0L) {
+                    AlertDialog.Builder(context)
+                        .setTitle("Delete Note")
+                        .setMessage("Are you sure you want to delete this note?")
+                        .setPositiveButton("Yes") {dialogInterface, i -> viewModel.deleteNote(currentNote)}
+                        .setNegativeButton("Cancel") {dialogInterface, i -> dialogInterface.dismiss()}
+                        .create()
+                        .show()
+                }
+            }
+        }
+        return true
+    }
+
+}
+```
+
+- NoteListAdapter.kt
+
+```kotlin
+class NotesListAdapter(var notes: ArrayList<Note>, val actions: ListAction): RecyclerView.Adapter<NotesListAdapter.NoteViewHolder>() {
+
+    fun updateNotes(newNotes: List<Note>) {
+        notes.clear()
+        notes.addAll(newNotes)
+        notifyDataSetChanged()
+    }
+
+    inner class NoteViewHolder(view: View): RecyclerView.ViewHolder(view) {
+
+        private val layout = view.noteLayout
+        private val noteTitle = view.title
+        private val noteContent = view.content
+        private val noteDate = view.date
+
+        fun bind(note: Note) {
+            noteTitle.text = note.title
+            noteContent.text = note.content
+            val sdf = SimpleDateFormat("MMM dd, HH::mm:ss")
+            val resultDate = Date(note.updateTime)
+            noteDate.text = "Last updated: ${sdf.format(resultDate)}"
+
+            layout.setOnClickListener {
+                actions.onClick(note.id)
+            }
+        }
+
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = NoteViewHolder(
+        LayoutInflater.from(parent.context).inflate(R.layout.item_note, parent, false)
+    )
+
+    override fun onBindViewHolder(holder: NoteViewHolder, position: Int) {
+        holder.bind(notes[position])
+    }
+
+    override fun getItemCount(): Int = notes.size
+
+}
+```
+
+- NoteViewModel
+
+```kotlin
+class NoteViewModel(application: Application): AndroidViewModel(application) {
+
+    private val coroutineScope = CoroutineScope(Dispatchers.IO)
+
+    val repository = NoteRepository(RoomNoteDataSource(application))
+
+    val useCases = Usecases(
+        AddNote(repository),
+        GetAllNotes(repository),
+        GetNote(repository),
+        RemoveNote(repository),
+    )
+
+    val saved = MutableLiveData<Boolean>()
+    val currentNote = MutableLiveData<Note?>()
+
+    fun saveNote(note: Note) {
+        coroutineScope.launch {
+            useCases.addNote(note)
+            saved.postValue(true)
+        }
+    }
+
+    fun getNote(id: Long) {
+        coroutineScope.launch {
+            val note = useCases.getNote(id)
+            currentNote.postValue(note)
+        }
+    }
+
+    fun deleteNote(note: Note) {
+        coroutineScope.launch {
+            useCases.removeNote(note)
+            saved.postValue(true)
+        }
+    }
+
+}
 ```
