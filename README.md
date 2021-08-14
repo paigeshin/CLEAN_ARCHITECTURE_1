@@ -1,5 +1,21 @@
 # Clean Architecture Overview
 
+# References
+
+[Theory](https://www.notion.so/Theory-e58d90c112204ba28a793c2fb45c7ec2)
+
+[v.1.0 Project Setup](https://www.notion.so/v-1-0-Project-Setup-e38a2705ed9e4bb99b683bf746f6b477)
+
+[v.2.0 Data Layer ](https://www.notion.so/v-2-0-Data-Layer-b58397c3b96c4f9187f9f3e1a090b0bb)
+
+[v.3.0 Navigation](https://www.notion.so/v-3-0-Navigation-274a4267ebfc4f0cbbedb16e5e69b046)
+
+[v.4.0, Room](https://www.notion.so/v-4-0-Room-9534b6a2590f41d3bb4e017aebd76106)
+
+[v.5.0 ViewModel](https://www.notion.so/v-5-0-ViewModel-046201e48525454fb854f479e812b084)
+
+[v.6.0. Dependency Injection](https://www.notion.so/v-6-0-Dependency-Injection-af9f8751ff194a2596cc51c33e6a9d7d)
+
 ### Theory
 
 - Introduce the concepts of clean architecture
@@ -1082,6 +1098,106 @@ class NoteViewModel(application: Application): AndroidViewModel(application) {
         coroutineScope.launch {
             useCases.removeNote(note)
             saved.postValue(true)
+        }
+    }
+
+}
+```
+
+# v.7.0, how to add new feature in clean architecture
+
+### Add wordCount Field
+
+```kotlin
+//POJO Object, Plain Old Java Object
+data class Note(
+    var title: String,
+    var content: String,
+    var creationTime: Long,
+    var updateTime: Long,
+    var id: Long = 0,
+    var wordCount: Int = 0
+)
+```
+
+### add Usecase class
+
+- ./usecase/GetWordCount.kt
+
+```kotlin
+class GetWordCount(private val noteRepository: NoteRepository) {
+    operator fun invoke(note: Note): Int = getCount(note.title) + getCount(note.content)
+
+    private fun getCount(str: String) =
+        str.split(" ", "\n")
+            .filter {
+                it.contains(Regex(".*[a-zA-Z].*"))
+            }
+            .count()
+
+}
+```
+
+### Presentation
+
+- ./framework/Usecases
+- Add `getWordCount` usecase
+
+```kotlin
+data class Usecases(
+    val addNote: AddNote,
+    val getAllNotes: GetAllNotes,
+    val getNote: GetNote,
+    val removeNote: RemoveNote,
+    val getWordCount: GetWordCount
+)
+```
+
+- module
+
+```kotlin
+@Module
+class UseCasesModule {
+
+    @Provides
+    fun getUsecases(repository: NoteRepository) = Usecases(
+        AddNote(repository),
+        GetAllNotes(repository),
+        GetNote(repository),
+        RemoveNote(repository),
+        GetWordCount(repository)
+    )
+
+}
+```
+
+- ListViewModel
+
+```kotlin
+class ListViewModel(application: Application): AndroidViewModel(application) {
+
+    private val coroutineScope = CoroutineScope(Dispatchers.IO)
+
+    val repository = NoteRepository(RoomNoteDataSource(application))
+
+    @Inject
+    lateinit var useCases: Usecases
+
+    init {
+        DaggerViewModelComponent.builder()
+            .applicationModule(ApplicationModule(application))
+            .build()
+            .inject(this)
+    }
+
+    val notes = MutableLiveData<List<Note>>()
+
+    fun getNotes() {
+        coroutineScope.launch {
+            val noteList = useCases.getAllNotes()
+						//This one
+            noteList.forEach{it.wordCount = useCases.getWordCount.invoke(it)}
+            notes.postValue(noteList)
         }
     }
 
