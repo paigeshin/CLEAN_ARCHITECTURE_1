@@ -1203,3 +1203,24 @@ class ListViewModel(application: Application): AndroidViewModel(application) {
 
 }
 ```
+
+# What I learned
+
+### Whole Process - Data
+
+- Define `Pojo` Data Class
+- Define `DataSource` interface
+- Define `Repository` which implements DataSource
+- Define `Usecases`
+
+### Internal Storage
+
+- Define `Entity`
+- Define `Dao`
+- Define `DataSource` class which implements `DataSource interface` defined in `Data`
+
+  ⇒ Connect it with database and dao
+
+### Presentation
+
+- ViewModel takes `Repository` defined in `Data` and pass class `datasource` as argument
